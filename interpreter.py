@@ -639,27 +639,34 @@ class HaklangInterpreter:
         if expr == '야조깜베':
             return False
         
-        # Handle comparison operators
-        # Support: <, >, <=, >=, ==, !=
-        for op in ['<=', '>=', '==', '!=', '<', '>']:
-            if op in expr:
-                parts = expr.split(op, 1)
+        # Handle comparison operators - Korean keywords
+        # Check compound operators first, then simple ones
+        korean_ops = [
+            ('비만정상', '<='),  # 비만 or 정상 = <=
+            ('홀쭉정상', '>='),  # 홀쭉 or 정상 = >=
+            ('정상정상', '=='),  # 정상정상 = ==
+            ('정상', '=='),     # 정상 = ==
+            ('비만', '<'),      # 비만 = <
+            ('홀쭉', '>'),      # 홀쭉 = >
+        ]
+        
+        for korean_op, symbol_op in korean_ops:
+            if korean_op in expr:
+                parts = expr.split(korean_op, 1)
                 if len(parts) == 2:
                     left = self.evaluate_expression(parts[0].strip())
                     right = self.evaluate_expression(parts[1].strip())
                     
-                    if op == '<':
+                    if symbol_op == '<':
                         return left < right
-                    elif op == '>':
+                    elif symbol_op == '>':
                         return left > right
-                    elif op == '<=':
+                    elif symbol_op == '<=':
                         return left <= right
-                    elif op == '>=':
+                    elif symbol_op == '>=':
                         return left >= right
-                    elif op == '==':
+                    elif symbol_op == '==':
                         return left == right
-                    elif op == '!=':
-                        return left != right
         
         # If no operator, try to evaluate as expression
         val = self.evaluate_expression(expr)
