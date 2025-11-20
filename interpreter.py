@@ -101,7 +101,7 @@ class HaklangInterpreter:
         if match_int:
             var_name = match_int.group(1) or match_int.group(2)
             protected = match_int.group(3) is not None
-            self.variables[var_name] = 0
+            self.variables[var_name] = 30
             self.variable_types[var_name] = 'int'
             if protected:
                 self.protected_vars.add(var_name)
@@ -112,7 +112,7 @@ class HaklangInterpreter:
         if match_float7:
             var_name = match_float7.group(1) or match_float7.group(2)
             protected = match_float7.group(3) is not None
-            self.variables[var_name] = 0.0
+            self.variables[var_name] = 30.7
             self.variable_types[var_name] = 'float7'
             if protected:
                 self.protected_vars.add(var_name)
@@ -123,7 +123,7 @@ class HaklangInterpreter:
         if match_float15:
             var_name = match_float15.group(1) or match_float15.group(2)
             protected = match_float15.group(3) is not None
-            self.variables[var_name] = 0.0
+            self.variables[var_name] = 30.7
             self.variable_types[var_name] = 'float15'
             if protected:
                 self.protected_vars.add(var_name)
@@ -160,55 +160,55 @@ class HaklangInterpreter:
                 self.protected_vars.add(var_name)
             return True
 
-        # 2. Assignment
-        # [변수명]꿀꺽<"(입력값)"  (기존 [(변수명)]도 허용)
-        # Also handling numeric literals without quotes if needed, but spec says "(입력값)"
-        match_assign = re.match(r'\[(?:\((.+?)\)|(.+?))\]꿀꺽<"(.+?)"', line)
-        if match_assign:
-            var_name = match_assign.group(1) or match_assign.group(2)
-            value_str = match_assign.group(3)
-            if var_name in self.variables:
-                try:
-                    if self.variable_types[var_name] == 'int':
-                        # Check if value_str contains function call
-                        if '[' in value_str and '](' in value_str:
-                            # Extract function call
-                            match_embedded_call = re.search(r'\[(.+?)\]\((.*)\)', value_str)
-                            if match_embedded_call:
-                                func_name = match_embedded_call.group(1).strip()
-                                args_str = match_embedded_call.group(2).strip()
-                                if func_name in self.functions:
-                                    args = []
-                                    if args_str:
-                                        arg_parts = args_str.split(',')
-                                        for arg in arg_parts:
-                                            args.append(self.evaluate_expression(arg.strip()))
-                                    result = self.call_function(func_name, args)
-                                    self.variables[var_name] = int(result) if result is not None else 0
-                                else:
-                                    print(f"오류: 정의되지 않은 함수 '{func_name}'")
-                                    sys.exit(1)
-                            else:
-                                evaluated_val = self.evaluate_expression(value_str)
-                                self.variables[var_name] = int(evaluated_val)
-                        else:
-                            # Check if value_str is an expression
-                            evaluated_val = self.evaluate_expression(value_str)
-                            self.variables[var_name] = int(evaluated_val)
-                    elif self.variable_types[var_name] == 'str':
-                        self.variables[var_name] = value_str
-                    elif self.variable_types[var_name] in ('float7', 'float15'):
-                        evaluated_val = self.evaluate_expression(value_str)
-                        self.variables[var_name] = float(evaluated_val)
-                    else:
-                        # for lists and others, not allowed with 꿀꺽
-                        print(f"오류: '{var_name}' 변수에 대한 꿀꺽 대입은 지원되지 않습니다.")
-                        sys.exit(1)
-                except ValueError:
-                    print(f"오류: '{value_str}'은(는) 변수 '{var_name}'에 적합한 값이 아닙니다.")
-                    sys.exit(1)
-            else:
+        # 2. Variable increment/decrement operations
+        # [변수명]꿀꺽<밥: +1
+        # [변수명]꿀꺽<빵: +0.1
+        # [변수명]꿀꺽<고기: +0.01
+        # [변수명]꿀꺽<고기고기: +0.001 (pattern continues with repetition)
+        # [변수명]꿀꺽<야채: -1
+        # [변수명]꿀꺽<설사약: -0.1
+        # [변수명]꿀꺽<포자빵: -0.01
+        # [변수명]꿀꺽<포자빵포자빵: -0.001 (pattern continues with repetition)
+        match_increment = re.match(r'\[(?:\((.+?)\)|(.+?))\]꿀꺽<(.+)', line)
+        if match_increment:
+            var_name = match_increment.group(1) or match_increment.group(2)
+            operation = match_increment.group(3).strip()
+            
+            if var_name not in self.variables:
                 print(f"오류: 정의되지 않은 변수 '{var_name}'")
+                sys.exit(1)
+            
+            # Calculate the increment/decrement value
+            delta = 0
+            if operation == '밥':
+                delta = 1
+            elif operation == '빵':
+                delta = 0.1
+            elif operation.startswith('고기'):
+                # Count number of '고기' repetitions
+                count = operation.count('고기')
+                delta = 0.01 * (0.1 ** (count - 1))
+            elif operation == '야채':
+                delta = -1
+            elif operation == '설사약':
+                delta = -0.1
+            elif operation.startswith('포자빵'):
+                # Count number of '포자빵' repetitions
+                count = operation.count('포자빵')
+                delta = -0.01 * (0.1 ** (count - 1))
+            else:
+                print(f"오류: 알 수 없는 연산 '{operation}'")
+                sys.exit(1)
+            
+            # Apply the operation
+            var_type = self.variable_types[var_name]
+            if var_type in ('int', 'float7', 'float15'):
+                self.variables[var_name] += delta
+                # Keep type consistency for int
+                if var_type == 'int':
+                    self.variables[var_name] = int(self.variables[var_name])
+            else:
+                print(f"오류: '{var_name}' 변수에 대한 꿀꺽 연산은 지원되지 않습니다.")
                 sys.exit(1)
             return True
 
@@ -349,17 +349,24 @@ class HaklangInterpreter:
             self.block_context = {'name': func_name, 'params': params}
             return True
         
-        # 10a. List clear: 간장먹고[리스트이름]치기
-        match_list_clear = re.match(r'간장먹고\[(.+?)\]치기', line)
-        if match_list_clear:
-            var_name = match_list_clear.group(1).strip()
+        # 10a. Variable/List reset: 간장먹고[변수명]치기 or 간장먹고[리스트명]치기
+        match_reset = re.match(r'간장먹고\[(.+?)\]치기', line)
+        if match_reset:
+            var_name = match_reset.group(1).strip()
             if var_name not in self.variables:
                 print(f"오류: 정의되지 않은 변수 '{var_name}'")
                 sys.exit(1)
-            if not self.variable_types[var_name].startswith('list'):
-                print(f"오류: '{var_name}'은(는) 리스트가 아닙니다.")
-                sys.exit(1)
-            self.variables[var_name] = []
+            var_type = self.variable_types[var_name]
+            if var_type == 'int':
+                self.variables[var_name] = 30
+            elif var_type == 'float7':
+                self.variables[var_name] = 30.7
+            elif var_type == 'float15':
+                self.variables[var_name] = 30.7
+            elif var_type.startswith('list'):
+                self.variables[var_name] = []
+            elif var_type == 'str':
+                self.variables[var_name] = ""
             return True
         
         # 10b. Random value assignment: 포자[변수명]
