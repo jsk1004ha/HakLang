@@ -50,7 +50,16 @@ class HaklangInterpreter:
                         # This is the opening delimiter for function/loop body, skip it
                         continue
                     
-                    if line in ['귤한봉지', '학', '}귤한봉지', '}그챼']:
+                    # Check for block ending based on block type
+                    is_block_end = False
+                    if self.block_type == 'while' and line == '귤한봉지':
+                        is_block_end = True
+                    elif self.block_type in ['for', 'function', 'if', 'elseif', 'else'] and line == '학':
+                        is_block_end = True
+                    elif line in ['}귤한봉지', '}그챼']:
+                        is_block_end = True
+                    
+                    if is_block_end:
                         # End of block
                         result = self.execute_block()
                         self.in_block = False
@@ -160,7 +169,22 @@ class HaklangInterpreter:
                 self.protected_vars.add(var_name)
             return True
 
-        # 2. Variable increment/decrement operations
+        # 2. String assignment (backward compatibility): [변수명]꿀꺽<'문자열'
+        match_str_assign = re.match(r'\[(?:\((.+?)\)|(.+?))\]꿀꺽<\'(.+)\'', line)
+        if match_str_assign:
+            var_name = match_str_assign.group(1) or match_str_assign.group(2)
+            value_str = match_str_assign.group(3)
+            if var_name not in self.variables:
+                print(f"오류: 정의되지 않은 변수 '{var_name}'")
+                sys.exit(1)
+            if self.variable_types[var_name] == 'str':
+                self.variables[var_name] = value_str
+            else:
+                print(f"오류: '{var_name}'은(는) 문자열 변수가 아닙니다.")
+                sys.exit(1)
+            return True
+        
+        # 2b. Variable increment/decrement operations
         # [변수명]꿀꺽<밥: +1
         # [변수명]꿀꺽<빵: +0.1
         # [변수명]꿀꺽<고기: +0.01
@@ -212,7 +236,7 @@ class HaklangInterpreter:
                 sys.exit(1)
             return True
 
-        # 2b. List assignment: [리스트명]쿰척<"[v1,v2,...]"
+        # 2c. List assignment: [리스트명]쿰척<"[v1,v2,...]"
         match_list_assign = re.match(r'\[(?:\((.+?)\)|(.+?))\]쿰척<"\[(.*)\]"', line)
         if match_list_assign:
             var_name = match_list_assign.group(1) or match_list_assign.group(2)
@@ -273,8 +297,13 @@ class HaklangInterpreter:
                 try:
                     if self.variable_types[var_name] == 'int':
                         self.variables[var_name] = int(val_str)
-                    else:
+                    elif self.variable_types[var_name] in ('float7', 'float15'):
                         self.variables[var_name] = float(val_str)
+                    elif self.variable_types[var_name] == 'str':
+                        self.variables[var_name] = val_str
+                    else:
+                        print(f"오류: '{var_name}' 변수 타입은 입력을 지원하지 않습니다.")
+                        sys.exit(1)
                 except ValueError:
                     print(f"오류: '{val_str}'은(는) 변수 '{var_name}'에 적합한 값이 아닙니다.")
                     sys.exit(1)
@@ -527,12 +556,7 @@ class HaklangInterpreter:
             cond_expr = self.block_context['cond']
             if self.evaluate_condition(cond_expr):
                 self.if_condition_met = True
-                for body_line in self.block_buffer:
-                    if not self.process_line(body_line):
-                        print(f"오류: if문 본문 오류: {body_line}")
-                        sys.exit(1)
-                    if self.break_flag or self.return_flag:
-                        break
+                self.execute_nested_block(self.block_buffer)
             return
         
         elif self.block_type == 'elseif':
@@ -540,23 +564,13 @@ class HaklangInterpreter:
             cond_expr = self.block_context['cond']
             if not self.if_condition_met and self.evaluate_condition(cond_expr):
                 self.if_condition_met = True
-                for body_line in self.block_buffer:
-                    if not self.process_line(body_line):
-                        print(f"오류: elseif문 본문 오류: {body_line}")
-                        sys.exit(1)
-                    if self.break_flag or self.return_flag:
-                        break
+                self.execute_nested_block(self.block_buffer)
             return
         
         elif self.block_type == 'else':
             # Execute else block only if no previous conditions were met
             if not self.if_condition_met:
-                for body_line in self.block_buffer:
-                    if not self.process_line(body_line):
-                        print(f"오류: else문 본문 오류: {body_line}")
-                        sys.exit(1)
-                    if self.break_flag or self.return_flag:
-                        break
+                self.execute_nested_block(self.block_buffer)
             # Reset condition flag after else
             self.if_condition_met = False
             return
@@ -582,12 +596,7 @@ class HaklangInterpreter:
                 
                 # Execute body
                 self.break_flag = False
-                for body_line in self.block_buffer:
-                    if not self.process_line(body_line):
-                        print(f"오류: for문 본문 오류: {body_line}")
-                        sys.exit(1)
-                    if self.break_flag:
-                        break
+                self.execute_nested_block(self.block_buffer)
                 
                 # If break was hit, exit outer loop too
                 if self.break_flag:
@@ -618,12 +627,7 @@ class HaklangInterpreter:
                 
                 # Execute body
                 self.break_flag = False
-                for body_line in self.block_buffer:
-                    if not self.process_line(body_line):
-                        print(f"오류: while문 본문 오류: {body_line}")
-                        sys.exit(1)
-                    if self.break_flag:
-                        break
+                self.execute_nested_block(self.block_buffer)
                 
                 # If break was hit, exit outer loop too
                 if self.break_flag:
@@ -635,6 +639,99 @@ class HaklangInterpreter:
             if iterations >= max_iterations:
                 print("오류: while문이 너무 많이 반복되었습니다 (무한 루프?)")
                 sys.exit(1)
+    
+    def execute_nested_block(self, lines):
+        """Execute a block of code that may contain nested structures like if statements."""
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            
+            # Check if this line starts a nested if/elseif/else block
+            if re.match(r'비만인가\[.+?\]알아보자', line):
+                # Start of if block - find matching 학
+                nested_lines = []
+                i += 1
+                if i < len(lines) and lines[i] == '학범이는비만임':
+                    i += 1
+                depth = 1
+                while i < len(lines) and depth > 0:
+                    if lines[i] == '학':
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    elif re.match(r'비만인가\[.+?\]알아보자', lines[i]):
+                        depth += 1
+                    if depth > 0:
+                        nested_lines.append(lines[i])
+                    i += 1
+                
+                # Execute if block
+                match = re.match(r'비만인가\[(.+?)\]알아보자', line)
+                cond_expr = match.group(1).strip()
+                if self.evaluate_condition(cond_expr):
+                    self.if_condition_met = True
+                    self.execute_nested_block(nested_lines)
+                else:
+                    self.if_condition_met = False
+                
+            elif re.match(r'학범이는비만일수도있음\[.+?\]', line):
+                # Start of elseif block
+                nested_lines = []
+                i += 1
+                if i < len(lines) and lines[i] == '학':
+                    i += 1
+                depth = 1
+                while i < len(lines) and depth > 0:
+                    if lines[i] == '학':
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    elif re.match(r'비만인가\[.+?\]알아보자', lines[i]):
+                        depth += 1
+                    if depth > 0:
+                        nested_lines.append(lines[i])
+                    i += 1
+                
+                # Execute elseif block
+                match = re.match(r'학범이는비만일수도있음\[(.+?)\]', line)
+                cond_expr = match.group(1).strip()
+                if not self.if_condition_met and self.evaluate_condition(cond_expr):
+                    self.if_condition_met = True
+                    self.execute_nested_block(nested_lines)
+                    
+            elif line == '학범이는비만이아님':
+                # Start of else block
+                nested_lines = []
+                i += 1
+                if i < len(lines) and lines[i] == '학':
+                    i += 1
+                depth = 1
+                while i < len(lines) and depth > 0:
+                    if lines[i] == '학':
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    elif re.match(r'비만인가\[.+?\]알아보자', lines[i]):
+                        depth += 1
+                    if depth > 0:
+                        nested_lines.append(lines[i])
+                    i += 1
+                
+                # Execute else block
+                if not self.if_condition_met:
+                    self.execute_nested_block(nested_lines)
+                # Reset condition flag
+                self.if_condition_met = False
+                
+            else:
+                # Regular line
+                if not self.process_line(line):
+                    print(f"오류: 본문 오류: {line}")
+                    sys.exit(1)
+                if self.break_flag or self.return_flag:
+                    break
+            
+            i += 1
 
     def evaluate_condition(self, expr):
         """Evaluate a condition expression and return True/False."""
@@ -769,6 +866,8 @@ class HaklangInterpreter:
                         output_str += f"{val:.7f}"
                     elif v_type == 'float15':
                         output_str += f"{val:.15f}"
+                    elif v_type == 'str':
+                        output_str += str(val)
                 else:
                     output_str += "undefined"
             elif token.startswith('[') and re.match(r'\[[^\]]+\]\[\d+\]', token):
